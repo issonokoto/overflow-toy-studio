@@ -14,6 +14,7 @@ import {
   createBlankDesign,
   compileDesignToPattern,
 } from '../engine/boardDesign.js';
+import { generateRandomBoard } from '../engine/generator.js';
 import { PATTERNS, getPatternById } from '../patterns/index.js';
 
 const canvas = document.getElementById('simCanvas');
@@ -60,6 +61,8 @@ const els = {
   statOverflowPct: document.getElementById('statOverflowPct'),
   statOverflowFill: document.getElementById('statOverflowFill'),
 
+  btnGenerateRandom: document.getElementById('btnGenerateRandom'),
+  selGenFilter: document.getElementById('selGenFilter'),
   btnAutoRec: document.getElementById('btnAutoRec'),
   btnToggleEditMain: document.getElementById('btnToggleEditMain'),
   btnToggleEditMainLabel: document.getElementById('btnToggleEditMainLabel'),
@@ -296,7 +299,7 @@ function syncSlidersFromPattern(pat) {
 function renderPatternButtons() {
   els.patternList.innerHTML = '';
   PATTERNS.forEach((pat, idx) => {
-    const active = !currentSavedId && currentBasePattern.id === pat.id;
+    const active = !currentSavedId && currentDesign.id === pat.id;
     const btn = document.createElement('button');
     btn.className = `pattern-item ${active ? 'active' : ''}`;
     btn.innerHTML = `
@@ -406,6 +409,33 @@ function loadCustomDesign(design, savedId = null) {
   renderSavedBoards();
 }
 
+function generateAndLoadRandomBoard() {
+  unlockAudio();
+  const filter = els.selGenFilter ? els.selGenFilter.value : 'any';
+  const base = PATTERNS[0];
+  const { design } = generateRandomBoard({ basePattern: base, filter });
+
+  currentBasePattern = base;
+  currentSavedId = null;
+  currentDesign = design;
+  editor.setDesign(currentDesign, { resetHistory: true });
+  els.boardNameInput.value = design.name;
+
+  const compiled = compileDesignToPattern(currentDesign, currentBasePattern);
+  syncSlidersFromPattern(compiled);
+
+  if (editor.active) {
+    sim.applyLayoutPreview(compiled);
+  } else {
+    sim.paused = false;
+    els.btnPauseLabel.textContent = '⏸ 一時停止';
+    els.mBtnPause.textContent = '⏸ 停止';
+    sim.loadPattern(compiled);
+  }
+  renderPatternButtons();
+  renderSavedBoards();
+}
+
 // --- Core Actions ---
 function startAutoRecord() {
   unlockAudio();
@@ -478,6 +508,10 @@ function runTraceSilhouette() {
 }
 
 // --- Button & Slider Bindings ---
+els.btnGenerateRandom.addEventListener('click', () => {
+  generateAndLoadRandomBoard();
+  closeDrawer();
+});
 els.btnAutoRec.addEventListener('click', startAutoRecord);
 els.btnToggleEditMain.addEventListener('click', () => setEditMode(!editor.active));
 els.btnEditModeToggle.addEventListener('click', () => {
@@ -691,7 +725,8 @@ els.slMediaY.addEventListener('input', (e) => {
 document.querySelectorAll('[data-action]').forEach((btn) => {
   btn.addEventListener('click', () => {
     const act = btn.dataset.action;
-    if (act === 'toggleEdit') setEditMode(!editor.active, { openTab: false });
+    if (act === 'generateRandom') generateAndLoadRandomBoard();
+    else if (act === 'toggleEdit') setEditMode(!editor.active, { openTab: false });
     else if (act === 'restart') {
       unlockAudio();
       if (editor.active) setEditMode(false);
@@ -731,7 +766,10 @@ window.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
 
   const key = e.key.toLowerCase();
-  if (key === 'e') {
+  if (key === 'n') {
+    e.preventDefault();
+    generateAndLoadRandomBoard();
+  } else if (key === 'e') {
     e.preventDefault();
     setEditMode(!editor.active);
   } else if (key === 'r') {

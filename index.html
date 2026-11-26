@@ -20,6 +20,7 @@
 
       <!-- Mobile Bottom Dock (auto-shown on narrow/touch screens) -->
       <div id="mobilePlayBar" class="mobile-dock">
+        <button class="m-btn m-btn-gen" data-action="generateRandom">🎲 自動生成</button>
         <button class="m-btn m-btn-accent" data-action="toggleEdit">✏️ 編集</button>
         <button class="m-btn" data-action="restart">↻ 最初から</button>
         <button class="m-btn" data-action="pause" id="mBtnPause">⏸ 停止</button>
@@ -100,6 +101,21 @@
         <section class="card">
           <h2>クイック操作 &amp; 録画</h2>
           <div class="btn-grid">
+            <button id="btnGenerateRandom" class="btn btn-gen btn-span2">
+              <span>🎲 ランダム盤面を自動生成</span>
+              <kbd>N</kbd>
+            </button>
+            <div class="gen-filter-row btn-span2">
+              <label class="select-label">
+                生成タイプ
+                <select id="selGenFilter">
+                  <option value="any">すべておまかせ（6系統）</option>
+                  <option value="symmetric">対称カーブ（波・結晶・連室）</option>
+                  <option value="organic">非対称・蛇行（スラローム・島）</option>
+                  <option value="gimmick">ギミック祭り（バンパー＆回転）</option>
+                </select>
+              </label>
+            </div>
             <button id="btnAutoRec" class="btn btn-primary btn-span2">
               <span>🎬 オート録画（開始→溢れ自動保存）</span>
               <kbd>A</kbd>

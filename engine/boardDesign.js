@@ -257,7 +257,11 @@ export function compileDesignToPattern(design, basePattern) {
     ...basePattern,
     id: design.id || 'custom',
     name: design.name || 'CUSTOM BOARD',
-    subtitle: 'カスタム編集盤面',
+    subtitle: design.subtitle || 'カスタム編集盤面',
+    theme: design.theme ? { ...basePattern.theme, ...design.theme } : basePattern.theme,
+    catcher: design.catcherMotion
+      ? { ...basePattern.catcher, motion: design.catcherMotion }
+      : basePattern.catcher,
     spawn,
     buildLayout() {
       const walls = [];
