@@ -3,11 +3,13 @@
 import { classicPattern } from './classic.js';
 import { pinballPattern } from './pinball.js';
 import { hourglassPattern } from './hourglass.js';
+import { nauruPattern } from './nauru.js';
 
 export const PATTERNS = [
   classicPattern,
   pinballPattern,
   hourglassPattern,
+  nauruPattern,
 ];
 
 export function getPatternById(id) {
