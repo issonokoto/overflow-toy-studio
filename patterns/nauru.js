@@ -108,8 +108,10 @@ const NAURU_PINS = [
 export const nauruPattern = {
   id: 'nauru',
   shortcut: '4',
-  name: 'ナウルくん',
-  subtitle: 'ナウルくんシルエット特製カスタム盤面',
+  name: 'ナウル島',
+  subtitle: 'ナウル島シルエット特製カスタム盤面',
+  finaleTitle: 'ありがとう、ナウル島',
+  finaleSubtitle: 'OVERFLOW!',
   theme: {
     bgTop: '#041226',
     bgBottom: '#0a1f36',

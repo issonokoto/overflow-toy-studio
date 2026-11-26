@@ -1074,18 +1074,27 @@ export class NeonRenderer {
     const scale = 0.68 + 0.32 * ease;
     ctx.scale(scale, scale);
 
+    const finaleTitle = pattern.finaleTitle || 'OVERFLOW!';
+    const finaleSub = pattern.finaleSubtitle ?? pattern.name;
+    let titleSize = finaleTitle.length > 9 ? 84 : 124;
+
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = '900 124px "Segoe UI", system-ui, sans-serif';
+    ctx.font = `900 ${titleSize}px "Segoe UI", "Yu Gothic UI", system-ui, sans-serif`;
+    const measuredW = ctx.measureText(finaleTitle).width;
+    if (measuredW > 940) {
+      titleSize = Math.floor((titleSize * 940) / measuredW);
+      ctx.font = `900 ${titleSize}px "Segoe UI", "Yu Gothic UI", system-ui, sans-serif`;
+    }
     ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = theme.danger;
+    ctx.shadowColor = pattern.finaleTitle ? theme.accent : theme.danger;
     ctx.shadowBlur = 42;
-    ctx.fillText('OVERFLOW!', 0, 0);
+    ctx.fillText(finaleTitle, 0, 0);
     ctx.shadowBlur = 0;
 
-    ctx.font = '800 34px "Segoe UI", system-ui, sans-serif';
+    ctx.font = '800 34px "Segoe UI", "Yu Gothic UI", system-ui, sans-serif';
     ctx.fillStyle = 'rgba(248, 250, 252, 0.85)';
-    ctx.fillText(pattern.name, 0, 86);
+    ctx.fillText(finaleSub, 0, 86);
 
     const stats = [
       { label: 'TOTAL BALLS', value: `${state.totalBalls}`, color: theme.accent },
