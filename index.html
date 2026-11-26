@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>OVERFLOW TOY STUDIO — 9:16 Neon Physics &amp; Board Creator</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <!-- Main 9:16 Canvas Stage (1080x1920 internal resolution) -->
+    <main class="stage-area">
+      <div class="canvas-frame">
+        <canvas id="simCanvas" width="1080" height="1920"></canvas>
+      </div>
+
+      <button id="floatingShowPanelBtn" class="floating-toggle hidden" title="操作パネルを表示 (H)">
+        パネル表示 <kbd>H</kbd>
+      </button>
+
+      <!-- Mobile Bottom Dock (auto-shown on narrow/touch screens) -->
+      <div id="mobilePlayBar" class="mobile-dock">
+        <button class="m-btn m-btn-accent" data-action="toggleEdit">✏️ 編集</button>
+        <button class="m-btn" data-action="restart">↻ 最初から</button>
+        <button class="m-btn" data-action="pause" id="mBtnPause">⏸ 停止</button>
+        <button class="m-btn" data-action="openBgTab">🎨 背景</button>
+        <button class="m-btn" data-action="openDrawer">⚙️ メニュー</button>
+      </div>
+
+      <div id="mobileEditBar" class="mobile-dock mobile-edit-dock hidden">
+        <button class="m-btn m-btn-play" data-action="toggleEdit">▶ 再生</button>
+        <button class="m-btn active" data-tool="select">🖐 移動</button>
+        <button class="m-btn" data-tool="wall_free">〰️ 壁</button>
+        <button class="m-btn" data-tool="wall_line">／ 線壁</button>
+        <button class="m-btn" data-tool="pin">● 釘</button>
+        <button class="m-btn" data-tool="bumper">💥 強</button>
+        <button class="m-btn" data-tool="spinner">🌀 回転</button>
+        <button class="m-btn" data-tool="erase">🧹 消す</button>
+        <button class="m-btn" data-tool="bg_paint">🖌️ 背景塗</button>
+        <button class="m-btn" data-action="smoothWalls">✨ 丸める</button>
+        <button class="m-btn" data-action="toggleMirror" id="mBtnMirror">🪞 対称ON</button>
+        <button class="m-btn" data-action="undo">↩ 戻す</button>
+        <button class="m-btn" data-action="openDrawer">⚙️ 詳細</button>
+      </div>
+    </main>
+
+    <!-- Studio Sidebar (Desktop) / Slide-in Drawer (Mobile) -->
+    <aside id="studioPanel" class="studio-panel">
+      <header class="panel-header">
+        <div>
+          <h1>OVERFLOW STUDIO</h1>
+          <p class="sub">9:16 X動画・盤面クリエイター</p>
+        </div>
+        <div class="header-right">
+          <div id="recBadge" class="rec-badge">
+            <span class="dot"></span>
+            <span id="recBadgeText">STANDBY</span>
+          </div>
+          <button id="btnCloseDrawer" class="btn-mini mobile-only">✕ 閉じる</button>
+        </div>
+      </header>
+
+      <!-- 3-Tab Navigation -->
+      <nav class="tab-bar">
+        <button class="tab-btn active" data-tab="play">▶ 再生・録画</button>
+        <button class="tab-btn" data-tab="edit">✏️ 盤面編集</button>
+        <button class="tab-btn" data-tab="bg">🎨 背景・動画</button>
+      </nav>
+
+      <!-- ================= TAB 1: PLAY & RECORD ================= -->
+      <div id="tab-play" class="tab-pane active">
+        <section class="card stats-grid">
+          <div class="stat-box">
+            <span class="label">BALLS</span>
+            <strong id="statBalls">1</strong>
+          </div>
+          <div class="stat-box">
+            <span class="label">CATCHES</span>
+            <strong id="statCatches">0</strong>
+          </div>
+          <div class="stat-box">
+            <span class="label">TIME</span>
+            <strong id="statTime">00:00.0</strong>
+          </div>
+          <div class="stat-box">
+            <span class="label">SPILL</span>
+            <strong id="statSpill">0</strong>
+          </div>
+          <div class="overflow-bar-wrap">
+            <div class="overflow-bar-label">
+              <span>OVERFLOW METER</span>
+              <span id="statOverflowPct">0%</span>
+            </div>
+            <div class="overflow-bar-track">
+              <div id="statOverflowFill" class="overflow-bar-fill"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>クイック操作 &amp; 録画</h2>
+          <div class="btn-grid">
+            <button id="btnAutoRec" class="btn btn-primary btn-span2">
+              <span>🎬 オート録画（開始→溢れ自動保存）</span>
+              <kbd>A</kbd>
+            </button>
+            <button id="btnToggleEditMain" class="btn btn-accent btn-span2">
+              <span id="btnToggleEditMainLabel">✏️ この盤面を編集する</span>
+              <kbd>E</kbd>
+            </button>
+            <button id="btnRecord" class="btn btn-danger">
+              <span id="btnRecordLabel">● 録画開始</span>
+              <kbd>V</kbd>
+            </button>
+            <button id="btnRestart" class="btn">
+              <span>↻ リスタート</span>
+              <kbd>R</kbd>
+            </button>
+            <button id="btnPause" class="btn">
+              <span id="btnPauseLabel">⏸ 一時停止</span>
+              <kbd>Space</kbd>
+            </button>
+            <button id="btnMute" class="btn">
+              <span id="btnMuteLabel">🔊 サウンド ON</span>
+              <kbd>M</kbd>
+            </button>
+            <button id="btnHud" class="btn">
+              <span id="btnHudLabel">📊 HUD 表示</span>
+              <kbd>G</kbd>
+            </button>
+            <button id="btnHidePanel" class="btn desktop-only">
+              <span>👁 パネル隠す</span>
+              <kbd>H</kbd>
+            </button>
+          </div>
+          <p id="codecInfo" class="hint-text">録画形式を確認中...</p>
+        </section>
+
+        <section class="card">
+          <h2>プリセット盤面 <span class="hint-inline">キー 1〜3</span></h2>
+          <div id="patternList" class="pattern-list"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-title-row">
+            <h2>マイ保存盤面</h2>
+            <span id="savedCountBadge" class="hint-inline">0件</span>
+          </div>
+          <div id="savedBoardList" class="pattern-list"></div>
+        </section>
+
+        <section class="card">
+          <div class="card-title-row">
+            <h2>物理・皿チューニング</h2>
+            <button id="btnResetParams" class="btn-mini">初期化</button>
+          </div>
+
+          <label class="slider-row">
+            <span>重力 <strong id="valGravity">2720</strong></span>
+            <input id="slGravity" type="range" min="1400" max="3800" step="20" />
+          </label>
+          <label class="slider-row">
+            <span>釘の反発 <strong id="valBounce">0.56</strong></span>
+            <input id="slBounce" type="range" min="0.25" max="1.05" step="0.02" />
+          </label>
+          <label class="slider-row">
+            <span>皿の速度 <strong id="valCatcherSpeed">455</strong></span>
+            <input id="slCatcherSpeed" type="range" min="160" max="800" step="10" />
+          </label>
+          <label class="slider-row">
+            <span>皿の幅 <strong id="valCatcherWidth">320</strong></span>
+            <input id="slCatcherWidth" type="range" min="140" max="420" step="6" />
+          </label>
+          <label class="slider-row">
+            <span>キャッチ増分 <strong id="valCatchBonus">+1</strong></span>
+            <input id="slCatchBonus" type="range" min="1" max="4" step="1" />
+          </label>
+        </section>
+
+        <section class="card">
+          <h2>シード再現（神回の再録画用）</h2>
+          <div class="seed-row">
+            <input id="seedInput" type="text" readonly />
+            <button id="btnReplaySeed" class="btn-mini">同シード再生</button>
+          </div>
+        </section>
+      </div>
+
+      <!-- ================= TAB 2: BOARD EDITOR ================= -->
+      <div id="tab-edit" class="tab-pane">
+        <section class="card">
+          <button id="btnEditModeToggle" class="btn btn-accent btn-span2" style="width: 100%; margin-bottom: 10px;">
+            <span id="btnEditModeToggleLabel">✏️ 編集モードを ON にする</span>
+            <kbd>E</kbd>
+          </button>
+          <p class="hint-text" style="margin-top: 0;">
+            💡 <b>壁を丸くするコツ</b>：①「フリー壁」でなぞるだけで自動丸め ②「移動」で壁の青い <b>+</b> を引っ張るとカーブ ③「壁を丸める」で角を滑らかに！
+          </p>
+        </section>
+
+        <section class="card">
+          <h2>描画・配置ツール</h2>
+          <div class="tool-grid">
+            <button class="tool-btn active" data-tool="select">🖐 移動 / +カーブ</button>
+            <button class="tool-btn" data-tool="wall_free">〰️ フリー壁(丸)</button>
+            <button class="tool-btn" data-tool="wall_line">／ 直線壁</button>
+            <button class="tool-btn" data-tool="pin">● 釘ペン(連続)</button>
+            <button class="tool-btn" data-tool="bumper">💥 バンパー</button>
+            <button class="tool-btn" data-tool="spinner">🌀 回転バー</button>
+            <button class="tool-btn tool-danger" data-tool="erase">🧹 消しゴム</button>
+            <button class="tool-btn" data-tool="bg_paint">🖌️ 背景ペイント</button>
+          </div>
+
+          <div class="btn-grid" style="margin-top: 10px;">
+            <button id="btnSmoothWalls" class="btn btn-primary btn-span2">
+              <span>✨ 選択中（または全体）の壁を丸める</span>
+            </button>
+            <button id="btnToggleMirror" class="btn is-active">
+              <span id="btnMirrorLabel">🪞 左右対称 ON</span>
+            </button>
+            <button id="btnBlankBoard" class="btn">
+              <span>📄 まっさら盤面</span>
+            </button>
+            <button id="btnUndo" class="btn">
+              <span>↩ 元に戻す</span>
+              <kbd>Ctrl+Z</kbd>
+            </button>
+            <button id="btnRedo" class="btn">
+              <span>↪ やり直す</span>
+              <kbd>Ctrl+Y</kbd>
+            </button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>釘の自動配置（壁の内側に安全配置）</h2>
+          <div class="inline-row">
+            <label class="select-label">
+              配列
+              <select id="selAutoPinStyle">
+                <option value="staggered">千鳥（定番）</option>
+                <option value="grid">格子（グリッド）</option>
+                <option value="random">ランダム散らし</option>
+              </select>
+            </label>
+            <label class="check-label">
+              <input id="chkKeepBumpers" type="checkbox" checked />
+              バンパー残す
+            </label>
+          </div>
+          <label class="slider-row" style="margin-top: 8px;">
+            <span>釘の間隔 <strong id="valAutoPinSpacing">114px</strong></span>
+            <input id="slAutoPinSpacing" type="range" min="82" max="176" step="4" value="114" />
+          </label>
+          <div class="btn-grid" style="margin-top: 8px;">
+            <button id="btnAutoFillPins" class="btn btn-primary">
+              <span>✨ 釘を自動配置</span>
+            </button>
+            <button id="btnClearPins" class="btn">
+              <span>釘だけクリア</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>画像シルエットから自動生成</h2>
+          <p class="hint-text" style="margin-top: 0; margin-bottom: 8px;">
+            「🎨 背景・動画」タブで透過PNGや白背景画像を読み込んだ後、このボタンで輪郭に沿った壁＆釘を一発生成できます。
+          </p>
+          <button id="btnTraceFromBg" class="btn btn-accent" style="width: 100%;">
+            <span>✨ 背面画像の形から壁＆釘を自動生成</span>
+          </button>
+          <p id="traceStatusText" class="hint-text"></p>
+        </section>
+
+        <section class="card">
+          <h2>自作盤面の保存・共有</h2>
+          <div class="seed-row" style="margin-bottom: 8px;">
+            <input id="boardNameInput" type="text" placeholder="盤面の名前（例：ハート台）" />
+            <button id="btnSaveBoard" class="btn-mini btn-accent-mini">💾 保存</button>
+          </div>
+          <div class="btn-grid">
+            <button id="btnExportJson" class="btn">📤 JSON書出</button>
+            <button id="btnImportJson" class="btn">📥 JSON読込</button>
+          </div>
+          <input id="inputImportJson" type="file" accept=".json,application/json" class="hidden" />
+        </section>
+      </div>
+
+      <!-- ================= TAB 3: BACKGROUND & MEDIA ================= -->
+      <div id="tab-bg" class="tab-pane">
+        <section class="card">
+          <h2>背面部分ペイントブラシ</h2>
+          <div class="btn-grid" style="margin-bottom: 10px;">
+            <button id="btnBgPaintTool" class="btn" data-tool="bg_paint">🖌️ 部分ペイント</button>
+            <button id="btnBgEraseTool" class="btn" data-tool="bg_erase">🧽 ペイント消し</button>
+          </div>
+
+          <div class="swatch-row">
+            <input id="inpBrushColor" type="color" value="#38bdf8" title="ブラシ色" />
+            <button class="swatch" style="background:#38bdf8" data-color="#38bdf8"></button>
+            <button class="swatch" style="background:#ff2e63" data-color="#ff2e63"></button>
+            <button class="swatch" style="background:#fde047" data-color="#fde047"></button>
+            <button class="swatch" style="background:#4ade80" data-color="#4ade80"></button>
+            <button class="swatch" style="background:#c084fc" data-color="#c084fc"></button>
+            <button class="swatch" style="background:#fb923c" data-color="#fb923c"></button>
+          </div>
+
+          <label class="slider-row" style="margin-top: 8px;">
+            <span>ブラシ太さ <strong id="valBrushSize">90px</strong></span>
+            <input id="slBrushSize" type="range" min="24" max="280" step="4" value="90" />
+          </label>
+          <label class="slider-row">
+            <span>ブラシ濃さ <strong id="valBrushOpacity">55%</strong></span>
+            <input id="slBrushOpacity" type="range" min="10" max="100" step="5" value="55" />
+          </label>
+
+          <div class="btn-grid" style="margin-top: 8px;">
+            <button id="btnUndoPaint" class="btn">↩ 塗りを戻す</button>
+            <button id="btnClearPaint" class="btn btn-danger">ペイント全消去</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>ベース背景色 &amp; グリッド</h2>
+          <div class="color-pair-row">
+            <label>上色 <input id="inpBgTop" type="color" value="#040817" /></label>
+            <label>下色 <input id="inpBgBottom" type="color" value="#0b1128" /></label>
+            <button id="btnResetBgColors" class="btn-mini">テーマ色へ</button>
+          </div>
+          <label class="check-label" style="margin-top: 8px;">
+            <input id="chkShowGrid" type="checkbox" checked />
+            サイバーグリッドを表示
+          </label>
+        </section>
+
+        <section class="card">
+          <h2>背面画像 / ループ動画</h2>
+          <div class="btn-grid" style="margin-bottom: 8px;">
+            <button id="btnPickMedia" class="btn btn-primary">📁 画像/動画を選ぶ</button>
+            <button id="btnClearMedia" class="btn">✕ 解除</button>
+          </div>
+          <input id="inputMediaFile" type="file" accept="image/*,video/*" class="hidden" />
+          <p id="mediaStatusText" class="hint-text" style="margin-top: 0; margin-bottom: 8px;">未設定（PNG / JPG / MP4 / WebM 対応）</p>
+
+          <button id="btnTraceFromBgTab" class="btn btn-accent" style="width: 100%; margin-bottom: 10px;">
+            <span>✨ この画像の形に沿って壁＆釘を自動生成</span>
+          </button>
+
+          <div class="inline-row" style="margin-bottom: 8px;">
+            <label class="select-label">
+              表示モード
+              <select id="selMediaFit">
+                <option value="contain">全体表示（Contain）</option>
+                <option value="cover">画面埋め（Cover）</option>
+              </select>
+            </label>
+          </div>
+
+          <label class="slider-row">
+            <span>不透明度 <strong id="valMediaOpacity">65%</strong></span>
+            <input id="slMediaOpacity" type="range" min="5" max="100" step="5" value="65" />
+          </label>
+          <label class="slider-row">
+            <span>サイズ <strong id="valMediaScale">100%</strong></span>
+            <input id="slMediaScale" type="range" min="30" max="240" step="5" value="100" />
+          </label>
+          <label class="slider-row">
+            <span>左右位置 <strong id="valMediaX">0</strong></span>
+            <input id="slMediaX" type="range" min="-450" max="450" step="10" value="0" />
+          </label>
+          <label class="slider-row">
+            <span>上下位置 <strong id="valMediaY">0</strong></span>
+            <input id="slMediaY" type="range" min="-600" max="600" step="10" value="0" />
+          </label>
+        </section>
+      </div>
+    </aside>
+  </div>
+
+  <script type="module" src="./ui/studio.js"></script>
+</body>
+</html>

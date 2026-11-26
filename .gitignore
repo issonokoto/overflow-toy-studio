@@ -1,0 +1,11 @@
+# OS & Editor
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Recorded videos & logs
+*.mp4
+*.webm
+*.mov
+*.log
+node_modules/
