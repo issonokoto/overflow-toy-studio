@@ -1,22 +1,19 @@
-// Procedural Web Audio synthesizer with musical scales, polyphony limiter,
-// master compressor, and MediaStream destination for synchronized video recording.
+// Procedural Web Audio synthesizer with iOS Safari sync unlock,
+// musical scales, polyphony limiter, master compressor, and isolated recording audio taps.
 
 import { clamp } from './prng.js';
 
 const SCALES = {
-  // C major pentatonic across 3 octaves (never dissonant, bright & joyful)
   pentatonic: [
     261.63, 293.66, 329.63, 392.0, 440.0,
     523.25, 587.33, 659.25, 783.99, 880.0,
     1046.5, 1174.66, 1318.51, 1567.98, 1760.0,
   ],
-  // Lydian neon sparkle (dreamy cyber vibe)
   lydian: [
     261.63, 293.66, 329.63, 369.99, 392.0, 440.0, 493.88,
     523.25, 587.33, 659.25, 739.99, 783.99, 880.0, 987.77,
     1046.5,
   ],
-  // Minor pentatonic (intense arcade vibe)
   minor: [
     220.0, 261.63, 293.66, 329.63, 392.0,
     440.0, 523.25, 587.33, 659.25, 783.99,
@@ -29,9 +26,12 @@ export class AudioEngine {
     this.ctx = null;
     this.masterGain = null;
     this.compressor = null;
-    this.streamDest = null;
+    this._unlocked = false;
+    this._recDest = null;
+    this._recKeepAlive = null;
 
     this.muted = false;
+    this.liteMode = false;
     this.scaleName = 'pentatonic';
     this.activeVoices = 0;
     this.maxVoices = 32;
@@ -40,9 +40,47 @@ export class AudioEngine {
     this.catchCombo = 0;
   }
 
+  setLiteMode(enabled) {
+    this.liteMode = !!enabled;
+    this.maxVoices = this.liteMode ? 12 : 32;
+  }
+
+  // Must be called synchronously inside a user gesture (click / touchend) for iOS Safari!
+  unlockSync() {
+    // Request playback audio session on iOS 17+ so sound works reliably even with mute switch
+    if (typeof navigator !== 'undefined' && navigator.audioSession) {
+      try {
+        navigator.audioSession.type = 'playback';
+      } catch {
+        // ignore if unsupported
+      }
+    }
+
+    if (!this.ensureContext()) return false;
+    if (!this.ctx) return false;
+
+    try {
+      if (this.ctx.state === 'suspended' || this.ctx.state === 'interrupted') {
+        this.ctx.resume().catch(() => {});
+      }
+      // Play a 1-sample silent buffer synchronously to guarantee iOS Safari audio unlock
+      if (!this._unlocked || this.ctx.state !== 'running') {
+        const buf = this.ctx.createBuffer(1, 1, 22050);
+        const src = this.ctx.createBufferSource();
+        src.buffer = buf;
+        src.connect(this.ctx.destination);
+        src.start(0);
+        this._unlocked = true;
+      }
+    } catch {
+      // ignore
+    }
+    return true;
+  }
+
   ensureContext() {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') {
+      if (this.ctx.state === 'suspended' || this.ctx.state === 'interrupted') {
         this.ctx.resume().catch(() => {});
       }
       return true;
@@ -61,17 +99,56 @@ export class AudioEngine {
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.value = this.muted ? 0 : 0.72;
 
-    this.streamDest = this.ctx.createMediaStreamDestination();
-
     this.compressor.connect(this.masterGain);
     this.masterGain.connect(this.ctx.destination);
-    this.masterGain.connect(this.streamDest);
     return true;
   }
 
-  getAudioStream() {
-    this.ensureContext();
-    return this.streamDest ? this.streamDest.stream : null;
+  // Create an isolated MediaStreamDestination per recording so stopping a recording
+  // never kills main speaker playback on iOS Safari!
+  createRecordingAudioTap() {
+    this.unlockSync();
+    if (!this.ctx || !this.masterGain || typeof this.ctx.createMediaStreamDestination !== 'function') {
+      return null;
+    }
+    this.releaseRecordingAudioTap();
+    try {
+      const dest = this.ctx.createMediaStreamDestination();
+      this.masterGain.connect(dest);
+      // Feed a silent 0-level constant signal into the recorder tap so iOS Safari's
+      // AAC encoder never stalls waiting for audio frames during quiet moments!
+      if (typeof this.ctx.createConstantSource === 'function') {
+        const keep = this.ctx.createConstantSource();
+        keep.offset.value = 0;
+        keep.connect(dest);
+        keep.start();
+        this._recKeepAlive = keep;
+      }
+      this._recDest = dest;
+      return dest.stream;
+    } catch {
+      return null;
+    }
+  }
+
+  releaseRecordingAudioTap() {
+    if (this._recKeepAlive) {
+      try {
+        this._recKeepAlive.stop();
+        this._recKeepAlive.disconnect();
+      } catch {
+        // ignore
+      }
+      this._recKeepAlive = null;
+    }
+    if (this._recDest && this.masterGain) {
+      try {
+        this.masterGain.disconnect(this._recDest);
+      } catch {
+        // already disconnected
+      }
+    }
+    this._recDest = null;
   }
 
   setScale(name) {
@@ -91,15 +168,15 @@ export class AudioEngine {
   }
 
   playPinHit(xNorm, yNorm, impact, isBumper = false) {
-    if (!this.ctx || this.ctx.state !== 'running') return;
+    if (!this.ctx || this.ctx.state !== 'running' || this.muted) return;
     const now = this.ctx.currentTime;
-    // Rate-limit dense collisions so 200 balls stay musical
-    const minInterval = isBumper ? 0.015 : 0.022;
+    const minInterval = this.liteMode
+      ? (isBumper ? 0.03 : 0.045)
+      : (isBumper ? 0.015 : 0.022);
     if (now - this.lastPinSoundTime < minInterval || this.activeVoices >= this.maxVoices) return;
     this.lastPinSoundTime = now;
 
     const scale = SCALES[this.scaleName] || SCALES.pentatonic;
-    // Map X and depth to note index for pleasing melodic cascades
     const idxFloat = clamp(xNorm * 0.6 + (1 - yNorm) * 0.4, 0, 0.999) * scale.length;
     const freq = scale[Math.floor(idxFloat)];
     const gainAmt = clamp(impact / 750, 0.06, isBumper ? 0.24 : 0.14);
@@ -130,9 +207,9 @@ export class AudioEngine {
   }
 
   playCatch(ballCount) {
-    if (!this.ctx || this.ctx.state !== 'running') return;
+    if (!this.ctx || this.ctx.state !== 'running' || this.muted) return;
     const now = this.ctx.currentTime;
-    if (now - this.lastCatchSoundTime < 0.035) return;
+    if (now - this.lastCatchSoundTime < (this.liteMode ? 0.055 : 0.035)) return;
     if (now - this.lastCatchSoundTime < 0.7) {
       this.catchCombo = Math.min(this.catchCombo + 1, 10);
     } else {
@@ -142,10 +219,12 @@ export class AudioEngine {
 
     const scale = SCALES[this.scaleName] || SCALES.pentatonic;
     const baseIdx = Math.min(scale.length - 3, 4 + Math.floor(this.catchCombo * 0.7));
-    const notes = [scale[baseIdx], scale[Math.min(scale.length - 1, baseIdx + 2)], scale[Math.min(scale.length - 1, baseIdx + 4)]];
+    const notes = this.liteMode
+      ? [scale[baseIdx], scale[Math.min(scale.length - 1, baseIdx + 2)]]
+      : [scale[baseIdx], scale[Math.min(scale.length - 1, baseIdx + 2)], scale[Math.min(scale.length - 1, baseIdx + 4)]];
 
-    // Punchy sub-bass thump on catch
-    if (this.activeVoices < this.maxVoices + 6) {
+    // Sub-bass thump
+    if (!this.liteMode && this.activeVoices < this.maxVoices + 6) {
       this.activeVoices++;
       const sub = this.ctx.createOscillator();
       const subGain = this.ctx.createGain();
@@ -190,7 +269,7 @@ export class AudioEngine {
   }
 
   playRimClink() {
-    if (!this.ctx || this.ctx.state !== 'running') return;
+    if (!this.ctx || this.ctx.state !== 'running' || this.muted || this.liteMode) return;
     const now = this.ctx.currentTime;
     if (this.activeVoices >= this.maxVoices) return;
     this.activeVoices++;
@@ -214,9 +293,8 @@ export class AudioEngine {
   }
 
   playOverflowFinish() {
-    if (!this.ctx || this.ctx.state !== 'running') return;
+    if (!this.ctx || this.ctx.state !== 'running' || this.muted) return;
     const now = this.ctx.currentTime;
-    // Dramatic celebratory power chord + sub drop
     const chord = [130.81, 261.63, 329.63, 392.0, 523.25, 783.99];
     chord.forEach((freq, i) => {
       const osc = this.ctx.createOscillator();

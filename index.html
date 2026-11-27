@@ -8,10 +8,27 @@
 </head>
 <body>
   <div id="app" class="app-shell">
-    <!-- Main 9:16 Canvas Stage (1080x1920 internal resolution) -->
+    <!-- Main 9:16 Canvas Stage (1080x1920 or 720x1280 Lite internal resolution) -->
     <main class="stage-area">
       <div class="canvas-frame">
         <canvas id="simCanvas" width="1080" height="1920"></canvas>
+
+        <!-- Center START / REC-START Overlay (outside canvas bitmap, never baked into video) -->
+        <div id="startOverlay" class="start-overlay hidden">
+          <button id="btnCenterStart" class="center-start-btn" type="button">
+            <span id="centerStartIcon" class="cs-icon">▶</span>
+            <span id="centerStartTitle" class="cs-title">START</span>
+            <span id="centerStartSub" class="cs-sub">タップして開始（サウンドON）</span>
+          </button>
+          <button id="btnCancelPendingRec" class="cs-cancel hidden" type="button">録画をキャンセルして通常スタート</button>
+        </div>
+
+        <!-- Floating Live Recording Stop Pill (never baked into video) -->
+        <div id="floatingRecBar" class="floating-rec-bar hidden">
+          <span class="dot"></span>
+          <span id="floatingRecText">REC 0.0s</span>
+          <button id="btnFloatingStopRec" class="floating-stop-btn" type="button">■ 停止</button>
+        </div>
       </div>
 
       <button id="floatingShowPanelBtn" class="floating-toggle hidden" title="操作パネルを表示 (H)">
@@ -144,7 +161,11 @@
               <span id="btnHudLabel">📊 HUD 表示</span>
               <kbd>G</kbd>
             </button>
-            <button id="btnHidePanel" class="btn desktop-only">
+            <button id="btnLiteMode" class="btn">
+              <span id="btnLiteModeLabel">⚡ 軽量モード OFF</span>
+              <kbd>L</kbd>
+            </button>
+            <button id="btnHidePanel" class="btn desktop-only btn-span2">
               <span>👁 パネル隠す</span>
               <kbd>H</kbd>
             </button>
@@ -401,6 +422,26 @@
         </section>
       </div>
     </aside>
+  </div>
+
+  <!-- Mobile / iOS Video Save & Share Modal -->
+  <div id="saveModal" class="save-modal hidden" role="dialog" aria-modal="true">
+    <div class="save-modal-card">
+      <div class="save-modal-head">
+        <h3>🎬 録画完了</h3>
+        <button id="btnCloseSaveModal" class="btn-mini" type="button">✕ 閉じる</button>
+      </div>
+      <video id="savePreviewVideo" class="save-preview-video" controls playsinline muted loop></video>
+      <p id="saveFileInfo" class="hint-text" style="margin-top: 6px; margin-bottom: 10px;"></p>
+      <div class="btn-grid">
+        <button id="btnShareVideo" class="btn btn-primary btn-span2 hidden" type="button">
+          <span>📤 共有 / カメラロールに保存</span>
+        </button>
+        <button id="btnDownloadVideo" class="btn btn-gen btn-span2" type="button">
+          <span>⬇ 動画ファイルをダウンロード</span>
+        </button>
+      </div>
+    </div>
   </div>
 
   <script type="module" src="./ui/studio.js"></script>

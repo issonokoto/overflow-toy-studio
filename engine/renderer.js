@@ -7,6 +7,8 @@ import { WORLD_W, WORLD_H, clamp, hsla } from './prng.js';
 export class NeonRenderer {
   constructor(canvas, { background = null, editor = null } = {}) {
     this.canvas = canvas;
+    this.liteMode = false;
+    this.renderScale = 1.0;
     this.canvas.width = WORLD_W;
     this.canvas.height = WORLD_H;
     this.ctx = canvas.getContext('2d', { alpha: false });
@@ -29,6 +31,22 @@ export class NeonRenderer {
     this.hudBallPop = 0;
     this.showHud = true;
     this.bgTime = 0;
+  }
+
+  setLiteMode(enabled) {
+    this.liteMode = !!enabled;
+    const nextScale = this.liteMode ? 720 / WORLD_W : 1.0;
+    if (this.renderScale !== nextScale) {
+      this.renderScale = nextScale;
+      this.canvas.width = Math.round(WORLD_W * this.renderScale);
+      this.canvas.height = Math.round(WORLD_H * this.renderScale);
+    }
+    if (this.liteMode) {
+      if (this.particles.length > 260) this.particles.length = 260;
+      if (this.rings.length > 40) this.rings.length = 40;
+      if (this.streaks.length > 24) this.streaks.length = 24;
+      if (this.returnArcs.length > 24) this.returnArcs.length = 24;
+    }
   }
 
   resetVfx() {
@@ -100,7 +118,10 @@ export class NeonRenderer {
   }
 
   emitPinHit(x, y, hue, isBumper) {
-    if (this.rings.length < 320) {
+    const ringCap = this.liteMode ? 40 : 320;
+    const partCap = this.liteMode ? 260 : 2400;
+
+    if (this.rings.length < ringCap) {
       this.rings.push({
         x,
         y,
@@ -111,7 +132,7 @@ export class NeonRenderer {
         lineWidth: isBumper ? 7 : 3.2,
         speed: isBumper ? 440 : 260,
       });
-      if (isBumper) {
+      if (isBumper && !this.liteMode) {
         this.rings.push({
           x,
           y,
@@ -125,8 +146,8 @@ export class NeonRenderer {
       }
     }
 
-    const count = isBumper ? 34 : 8;
-    for (let i = 0; i < count && this.particles.length < 2400; i++) {
+    const count = this.liteMode ? (isBumper ? 9 : 2) : (isBumper ? 34 : 8);
+    for (let i = 0; i < count && this.particles.length < partCap; i++) {
       const ang = Math.random() * Math.PI * 2;
       const spd = isBumper ? 180 + Math.random() * 560 : 80 + Math.random() * 240;
       this.particles.push({
@@ -135,70 +156,78 @@ export class NeonRenderer {
         vx: Math.cos(ang) * spd,
         vy: Math.sin(ang) * spd,
         life: 0,
-        maxLife: isBumper ? 0.5 + Math.random() * 0.35 : 0.26 + Math.random() * 0.2,
-        size: isBumper ? 5.5 + Math.random() * 5 : 2.8 + Math.random() * 2.8,
+        maxLife: isBumper ? 0.45 + Math.random() * 0.25 : 0.22 + Math.random() * 0.16,
+        size: isBumper ? 5.5 + Math.random() * 4.5 : 2.8 + Math.random() * 2.5,
         hue: (hue + (Math.random() - 0.5) * 45 + 360) % 360,
-        spark: isBumper || i % 2 === 0,
+        spark: !this.liteMode && (isBumper || i % 2 === 0),
       });
     }
 
     if (isBumper) {
-      this.triggerShake(10, 0.14);
-      this.triggerFlash(hsla(hue, 100, 68, 1), 0.1);
+      this.triggerShake(this.liteMode ? 6 : 10, 0.14);
+      if (!this.liteMode) this.triggerFlash(hsla(hue, 100, 68, 1), 0.1);
     }
   }
 
   emitCatch(x, y, spawnCenterX, spawnY, hue, bonus, totalBalls) {
-    this.hudBallPop = 1.0;
-    this.triggerShake(11 + Math.min(totalBalls * 0.06, 8), 0.2);
-    this.triggerFlash(hsla(hue, 100, 68, 1), 0.18);
+    const ringCap = this.liteMode ? 45 : 360;
+    const partCap = this.liteMode ? 280 : 2400;
+    const streakCap = this.liteMode ? 24 : 280;
+    const arcCap = this.liteMode ? 24 : 120;
 
-    // Triple neon shockwaves
-    if (this.rings.length < 360) {
-      this.rings.push(
-        { x, y, r: 20, maxR: 250, alpha: 1.0, hue, lineWidth: 9, speed: 620 },
-        { x, y, r: 12, maxR: 180, alpha: 0.95, hue: (hue + 55) % 360, lineWidth: 5.5, speed: 460 },
-        { x, y, r: 8, maxR: 120, alpha: 0.9, hue: (hue + 120) % 360, lineWidth: 3.5, speed: 340 }
-      );
+    this.hudBallPop = 1.0;
+    this.triggerShake(this.liteMode ? 7 : 11 + Math.min(totalBalls * 0.06, 8), 0.18);
+    this.triggerFlash(hsla(hue, 100, 68, 1), this.liteMode ? 0.1 : 0.18);
+
+    // Shockwaves
+    if (this.rings.length < ringCap) {
+      this.rings.push({ x, y, r: 20, maxR: 235, alpha: 1.0, hue, lineWidth: 8, speed: 600 });
+      if (!this.liteMode) {
+        this.rings.push(
+          { x, y, r: 12, maxR: 180, alpha: 0.95, hue: (hue + 55) % 360, lineWidth: 5.5, speed: 460 },
+          { x, y, r: 8, maxR: 120, alpha: 0.9, hue: (hue + 120) % 360, lineWidth: 3.5, speed: 340 }
+        );
+      }
     }
 
-    // Radial laser streaks bursting out from catcher
-    for (let i = 0; i < 14 && this.streaks.length < 280; i++) {
+    // Radial laser streaks
+    const streakCount = this.liteMode ? 4 : 14;
+    for (let i = 0; i < streakCount && this.streaks.length < streakCap; i++) {
       const ang = -Math.PI + Math.random() * Math.PI;
       this.streaks.push({
         x,
         y,
         ang,
         dist: 16,
-        len: 55 + Math.random() * 95,
-        speed: 780 + Math.random() * 640,
+        len: 55 + Math.random() * 90,
+        speed: 780 + Math.random() * 600,
         life: 0,
-        maxLife: 0.28 + Math.random() * 0.18,
+        maxLife: 0.25 + Math.random() * 0.15,
         hue: (hue + (Math.random() - 0.5) * 70 + 360) % 360,
-        width: 3 + Math.random() * 3.5,
+        width: 3 + Math.random() * 3,
       });
     }
 
-    // Huge fireworks fountain
-    const count = 62;
-    for (let i = 0; i < count && this.particles.length < 2400; i++) {
+    // Fireworks fountain
+    const count = this.liteMode ? 14 : 62;
+    for (let i = 0; i < count && this.particles.length < partCap; i++) {
       const ang = -Math.PI * 0.96 + Math.random() * Math.PI * 0.92;
-      const spd = 220 + Math.random() * 820;
+      const spd = 220 + Math.random() * 780;
       this.particles.push({
         x: x + (Math.random() - 0.5) * 40,
         y,
         vx: Math.cos(ang) * spd,
         vy: Math.sin(ang) * spd - 140,
         life: 0,
-        maxLife: 0.55 + Math.random() * 0.55,
-        size: 4.5 + Math.random() * 6.5,
+        maxLife: 0.45 + Math.random() * 0.4,
+        size: 4.5 + Math.random() * 5.5,
         hue: (hue + (Math.random() - 0.5) * 90 + 360) % 360,
-        spark: true,
+        spark: !this.liteMode,
       });
     }
 
-    // Big bold +1 popup
-    if (this.popups.length < 80) {
+    // Floating +1 popup
+    if (this.popups.length < (this.liteMode ? 24 : 80)) {
       this.popups.push({
         x: x + (Math.random() - 0.5) * 30,
         y: y - 48,
@@ -206,14 +235,14 @@ export class NeonRenderer {
         text: `+${bonus}`,
         hue,
         life: 0,
-        maxLife: 0.95,
-        scale: 1.55,
+        maxLife: 0.85,
+        scale: 1.5,
       });
     }
 
-    // Multiple neon return energy beams shooting back up to the START hopper
-    const beamCount = Math.min(1 + bonus, 4);
-    for (let b = 0; b < beamCount && this.returnArcs.length < 120; b++) {
+    // Neon return beams shooting back up to START hopper
+    const beamCount = this.liteMode ? 1 : Math.min(1 + bonus, 4);
+    for (let b = 0; b < beamCount && this.returnArcs.length < arcCap; b++) {
       const side = b % 2 === 0 ? (x < WORLD_W * 0.5 ? -1 : 1) : (x < WORLD_W * 0.5 ? 1 : -1);
       this.returnArcs.push({
         x0: x + (Math.random() - 0.5) * 36,
@@ -223,14 +252,14 @@ export class NeonRenderer {
         x1: spawnCenterX + (Math.random() - 0.5) * 110,
         y1: spawnY,
         t: 0,
-        dur: 0.36 + Math.random() * 0.14,
+        dur: 0.36 + Math.random() * 0.12,
         hue: (hue + b * 40) % 360,
       });
     }
   }
 
   emitWarningSpark(cx, cy) {
-    if (this.particles.length >= 2400) return;
+    if (this.particles.length >= (this.liteMode ? 260 : 2400)) return;
     const ang = -Math.PI + Math.random() * Math.PI;
     const spd = 140 + Math.random() * 340;
     this.particles.push({
@@ -239,62 +268,63 @@ export class NeonRenderer {
       vx: Math.cos(ang) * spd,
       vy: Math.sin(ang) * spd - 60,
       life: 0,
-      maxLife: 0.35 + Math.random() * 0.25,
+      maxLife: 0.32 + Math.random() * 0.22,
       size: 3.5 + Math.random() * 4,
       hue: 345 + Math.random() * 35,
-      spark: true,
+      spark: !this.liteMode,
     });
   }
 
   emitOverflowExplosion(cx, cy) {
-    this.triggerShake(32, 0.85);
-    this.triggerFlash('#ff2e63', 0.62);
+    this.triggerShake(this.liteMode ? 18 : 32, 0.75);
+    this.triggerFlash('#ff2e63', 0.55);
 
-    // 5-layer massive shockwave
-    for (let k = 0; k < 5; k++) {
+    const ringCount = this.liteMode ? 3 : 5;
+    for (let k = 0; k < ringCount; k++) {
       this.rings.push({
         x: cx,
         y: cy,
         r: 20 + k * 28,
-        maxR: 520 + k * 170,
+        maxR: 480 + k * 150,
         alpha: 1.0,
         hue: (340 + k * 42) % 360,
-        lineWidth: 13 - k * 1.8,
-        speed: 580 + k * 110,
+        lineWidth: 12 - k * 2,
+        speed: 560 + k * 100,
       });
     }
 
-    // 36 radial explosion lasers
-    for (let i = 0; i < 36; i++) {
-      const ang = (Math.PI * 2 * i) / 36 + Math.random() * 0.08;
+    const streakCount = this.liteMode ? 14 : 36;
+    for (let i = 0; i < streakCount; i++) {
+      const ang = (Math.PI * 2 * i) / streakCount + Math.random() * 0.08;
       this.streaks.push({
         x: cx,
         y: cy,
         ang,
         dist: 24,
-        len: 120 + Math.random() * 140,
-        speed: 900 + Math.random() * 600,
+        len: 110 + Math.random() * 120,
+        speed: 860 + Math.random() * 550,
         life: 0,
-        maxLife: 0.55 + Math.random() * 0.25,
+        maxLife: 0.5 + Math.random() * 0.22,
         hue: (335 + Math.random() * 95) % 360,
-        width: 5 + Math.random() * 4,
+        width: 5 + Math.random() * 3.5,
       });
     }
 
-    // 300 explosive rainbow/crimson particles
-    for (let i = 0; i < 300 && this.particles.length < 2800; i++) {
+    const partCount = this.liteMode ? 80 : 300;
+    const cap = this.liteMode ? 360 : 2800;
+    for (let i = 0; i < partCount && this.particles.length < cap; i++) {
       const ang = Math.random() * Math.PI * 2;
-      const spd = 160 + Math.random() * 1080;
+      const spd = 160 + Math.random() * 1000;
       this.particles.push({
         x: cx + (Math.random() - 0.5) * 140,
         y: cy + (Math.random() - 0.5) * 60,
         vx: Math.cos(ang) * spd,
         vy: Math.sin(ang) * spd - 200,
         life: 0,
-        maxLife: 0.9 + Math.random() * 1.1,
-        size: 5 + Math.random() * 9,
+        maxLife: 0.8 + Math.random() * 0.9,
+        size: 5 + Math.random() * 8,
         hue: (335 + Math.random() * 160) % 360,
-        spark: true,
+        spark: !this.liteMode,
       });
     }
   }
@@ -384,6 +414,8 @@ export class NeonRenderer {
     const theme = pattern.theme;
     const excitement = clamp((state.totalBalls - 1) / 65, 0, 1);
 
+    // Apply uniform scale (1.0 in ULTRA 1080x1920, 2/3 in LITE 720x1280)
+    ctx.setTransform(this.renderScale, 0, 0, this.renderScale, 0, 0);
     ctx.save();
 
     // Camera micro-shake
@@ -543,8 +575,10 @@ export class NeonRenderer {
     // Overflow threshold glowing laser line
     const lineColor = danger > 0.15 ? theme.danger : 'rgba(255, 92, 138, 0.8)';
     ctx.strokeStyle = lineColor;
-    ctx.shadowColor = theme.danger;
-    ctx.shadowBlur = danger > 0.15 ? 20 : 8;
+    if (!this.liteMode) {
+      ctx.shadowColor = theme.danger;
+      ctx.shadowBlur = danger > 0.15 ? 20 : 8;
+    }
     ctx.lineWidth = danger > 0.15 ? 5 : 3;
     ctx.setLineDash([14, 10]);
     ctx.beginPath();
@@ -559,8 +593,10 @@ export class NeonRenderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = danger > 0.25 ? '#ffffff' : theme.accent;
-    ctx.shadowColor = danger > 0.25 ? theme.danger : theme.accent;
-    ctx.shadowBlur = danger > 0.25 ? 28 : 20;
+    if (!this.liteMode) {
+      ctx.shadowColor = danger > 0.25 ? theme.danger : theme.accent;
+      ctx.shadowBlur = danger > 0.25 ? 28 : 20;
+    }
     ctx.fillText(danger > 0.25 ? 'OVERFLOW!' : 'START', midX, sp.hopperTopY - 48);
     ctx.shadowBlur = 0;
 
@@ -572,8 +608,10 @@ export class NeonRenderer {
       const by = sp.hopperTopY - 22;
       ctx.fillStyle = 'rgba(255, 255, 255, 0.16)';
       ctx.fillRect(bx, by, barW, barH);
-      ctx.shadowColor = theme.danger;
-      ctx.shadowBlur = 14;
+      if (!this.liteMode) {
+        ctx.shadowColor = theme.danger;
+        ctx.shadowBlur = 14;
+      }
       ctx.fillStyle = theme.danger;
       ctx.fillRect(bx, by, barW * clamp(danger, 0, 1), barH);
       ctx.shadowBlur = 0;
@@ -587,21 +625,23 @@ export class NeonRenderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    // Double outer neon bloom pass
+    // Outer neon glow pass (1 lightweight pass in Lite mode, 2 in Ultra)
     ctx.globalCompositeOperation = 'lighter';
-    ctx.strokeStyle = theme.wallGlow;
-    ctx.globalAlpha = 0.24 + excitement * 0.16;
-    for (let i = 0; i < walls.length; i++) {
-      const w = walls[i];
-      ctx.lineWidth = w.thickness + 26;
-      ctx.beginPath();
-      ctx.moveTo(w.x1, w.y1);
-      ctx.lineTo(w.x2, w.y2);
-      ctx.stroke();
+    if (!this.liteMode) {
+      ctx.strokeStyle = theme.wallGlow;
+      ctx.globalAlpha = 0.24 + excitement * 0.16;
+      for (let i = 0; i < walls.length; i++) {
+        const w = walls[i];
+        ctx.lineWidth = w.thickness + 26;
+        ctx.beginPath();
+        ctx.moveTo(w.x1, w.y1);
+        ctx.lineTo(w.x2, w.y2);
+        ctx.stroke();
+      }
     }
 
     ctx.strokeStyle = theme.wall;
-    ctx.globalAlpha = 0.45 + excitement * 0.2;
+    ctx.globalAlpha = 0.42 + excitement * 0.18;
     for (let i = 0; i < walls.length; i++) {
       const w = walls[i];
       ctx.lineWidth = w.thickness + 10;
@@ -818,8 +858,10 @@ export class NeonRenderer {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = col;
-    ctx.shadowBlur = 16;
+    if (!this.liteMode) {
+      ctx.shadowColor = col;
+      ctx.shadowBlur = 16;
+    }
     ctx.fillText(`+${c.bonusLabel || 1}`, c.x, topY + c.height * 0.55);
     ctx.shadowBlur = 0;
 
@@ -878,31 +920,34 @@ export class NeonRenderer {
     ctx.globalCompositeOperation = 'lighter';
     ctx.lineCap = 'round';
 
-    // 1. Vivid comet light trails
-    for (let i = 0; i < balls.length; i++) {
-      const b = balls[i];
-      const tr = b.trail;
-      const len = tr.length;
-      if (len < 2) continue;
+    // 1. Vivid comet light trails (skip trails in Lite mode once dense >140 balls to keep mobile buttery smooth)
+    const drawTrails = !this.liteMode || balls.length <= 140;
+    if (drawTrails) {
+      for (let i = 0; i < balls.length; i++) {
+        const b = balls[i];
+        const tr = b.trail;
+        const len = tr.length;
+        if (len < 2) continue;
 
-      for (let k = 1; k < len; k++) {
-        const ratio = k / len;
-        const p0 = tr[k - 1];
-        const p1 = tr[k];
-        const dx = p1.x - p0.x;
-        const dy = p1.y - p0.y;
-        if (dx * dx + dy * dy > 22000) continue;
+        for (let k = 1; k < len; k++) {
+          const ratio = k / len;
+          const p0 = tr[k - 1];
+          const p1 = tr[k];
+          const dx = p1.x - p0.x;
+          const dy = p1.y - p0.y;
+          if (dx * dx + dy * dy > 22000) continue;
 
-        ctx.strokeStyle = hsla(b.hue + ratio * 25, 100, 66, ratio * ratio * 0.62);
-        ctx.lineWidth = b.r * 1.45 * ratio;
-        ctx.beginPath();
-        ctx.moveTo(p0.x, p0.y);
-        ctx.lineTo(p1.x, p1.y);
-        ctx.stroke();
+          ctx.strokeStyle = hsla(b.hue + ratio * 25, 100, 66, ratio * ratio * 0.62);
+          ctx.lineWidth = b.r * 1.45 * ratio;
+          ctx.beginPath();
+          ctx.moveTo(p0.x, p0.y);
+          ctx.lineTo(p1.x, p1.y);
+          ctx.stroke();
+        }
       }
     }
 
-    // 2. Blazing plasma balls
+    // 2. Blazing plasma balls (pre-baked sprites -> super fast even in Lite mode!)
     for (let i = 0; i < balls.length; i++) {
       const b = balls[i];
       const sprite = this._getBallSprite(b.hue, b.r);
@@ -1015,8 +1060,10 @@ export class NeonRenderer {
     ctx.scale(popScale, popScale);
     ctx.font = '900 78px "Segoe UI", system-ui, sans-serif';
     ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = theme.accent;
-    ctx.shadowBlur = 24;
+    if (!this.liteMode) {
+      ctx.shadowColor = theme.accent;
+      ctx.shadowBlur = 24;
+    }
     ctx.fillText(`${state.totalBalls}`, 0, 0);
     ctx.restore();
 
@@ -1037,8 +1084,10 @@ export class NeonRenderer {
 
     ctx.font = '800 26px "Segoe UI", system-ui, sans-serif';
     ctx.fillStyle = theme.catcher;
-    ctx.shadowColor = theme.catcher;
-    ctx.shadowBlur = 12;
+    if (!this.liteMode) {
+      ctx.shadowColor = theme.catcher;
+      ctx.shadowBlur = 12;
+    }
     ctx.fillText(`CATCH × ${state.catches}`, 0, 96);
     ctx.restore();
 

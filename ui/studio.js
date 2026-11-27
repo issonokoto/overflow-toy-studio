@@ -6,7 +6,7 @@ import { AudioEngine } from '../engine/audio.js';
 import { BackgroundLayer } from '../engine/background.js';
 import { BoardEditor } from '../engine/editor.js';
 import { NeonRenderer } from '../engine/renderer.js';
-import { VideoRecorder } from '../engine/recorder.js';
+import { VideoRecorder, detectIOS, detectMobile } from '../engine/recorder.js';
 import { OverflowSimulation } from '../engine/simulation.js';
 import { BoardStorage } from '../engine/storage.js';
 import {
@@ -50,6 +50,24 @@ const els = {
   mBtnPause: document.getElementById('mBtnPause'),
   mBtnMirror: document.getElementById('mBtnMirror'),
 
+  startOverlay: document.getElementById('startOverlay'),
+  btnCenterStart: document.getElementById('btnCenterStart'),
+  centerStartIcon: document.getElementById('centerStartIcon'),
+  centerStartTitle: document.getElementById('centerStartTitle'),
+  centerStartSub: document.getElementById('centerStartSub'),
+  btnCancelPendingRec: document.getElementById('btnCancelPendingRec'),
+
+  floatingRecBar: document.getElementById('floatingRecBar'),
+  floatingRecText: document.getElementById('floatingRecText'),
+  btnFloatingStopRec: document.getElementById('btnFloatingStopRec'),
+
+  saveModal: document.getElementById('saveModal'),
+  btnCloseSaveModal: document.getElementById('btnCloseSaveModal'),
+  savePreviewVideo: document.getElementById('savePreviewVideo'),
+  saveFileInfo: document.getElementById('saveFileInfo'),
+  btnShareVideo: document.getElementById('btnShareVideo'),
+  btnDownloadVideo: document.getElementById('btnDownloadVideo'),
+
   recBadge: document.getElementById('recBadge'),
   recBadgeText: document.getElementById('recBadgeText'),
   codecInfo: document.getElementById('codecInfo'),
@@ -77,6 +95,8 @@ const els = {
   btnMuteLabel: document.getElementById('btnMuteLabel'),
   btnHud: document.getElementById('btnHud'),
   btnHudLabel: document.getElementById('btnHudLabel'),
+  btnLiteMode: document.getElementById('btnLiteMode'),
+  btnLiteModeLabel: document.getElementById('btnLiteModeLabel'),
   btnHidePanel: document.getElementById('btnHidePanel'),
 
   patternList: document.getElementById('patternList'),
@@ -149,28 +169,88 @@ const els = {
   valMediaY: document.getElementById('valMediaY'),
 };
 
-// Recorder setup
-const recorder = new VideoRecorder(canvas, audio, (recState) => {
-  if (recState.isRecording) {
-    els.recBadge.classList.add('recording');
-    els.btnRecordLabel.textContent = '■ 録画停止';
-    els.btnAutoRec.classList.toggle('is-active', recState.autoRecMode);
-  } else {
-    els.recBadge.classList.remove('recording');
-    els.recBadgeText.textContent = 'STANDBY';
-    els.btnRecordLabel.textContent = '● 録画開始';
-    els.btnAutoRec.classList.remove('is-active');
+const isMobileDevice = detectMobile() || window.innerWidth <= 900;
+const isIOSDevice = detectIOS();
+let pendingStartMode = null; // null | 'normal' | 'record' | 'auto'
+let lastRecordedMedia = null;
+
+// Save/Share modal helper for mobile & iOS (desktop downloads directly)
+function openSaveModal({ blob, filename, mimeType }) {
+  if (lastRecordedMedia?.url) {
+    URL.revokeObjectURL(lastRecordedMedia.url);
   }
+  const url = URL.createObjectURL(blob);
+  lastRecordedMedia = { blob, filename, mimeType, url };
+
+  els.savePreviewVideo.src = url;
+  const mb = (blob.size / (1024 * 1024)).toFixed(2);
+  els.saveFileInfo.textContent = `${filename} (${mb} MB)`;
+
+  // Show native Share button if Web Share API supports file sharing (iOS Safari / Android Chrome)
+  let canShareFile = false;
+  try {
+    if (typeof navigator.share === 'function' && typeof navigator.canShare === 'function') {
+      const testFile = new File([blob], filename, { type: mimeType || 'video/mp4' });
+      canShareFile = navigator.canShare({ files: [testFile] });
+    }
+  } catch {
+    canShareFile = false;
+  }
+  els.btnShareVideo.classList.toggle('hidden', !canShareFile);
+  els.saveModal.classList.remove('hidden');
+  sim.setSuspended(true);
+}
+
+function closeSaveModal() {
+  els.saveModal.classList.add('hidden');
+  els.savePreviewVideo.pause();
+  els.savePreviewVideo.removeAttribute('src');
+  els.savePreviewVideo.load();
+  if (!els.studioPanel.classList.contains('drawer-open')) {
+    sim.setSuspended(false);
+  }
+}
+
+// Recorder setup
+const recorder = new VideoRecorder(canvas, audio, {
+  onStateChange: (recState) => {
+    if (recState.isRecording) {
+      els.recBadge.classList.add('recording');
+      els.floatingRecBar.classList.remove('hidden');
+      els.btnFloatingStopRec.disabled = !!recState.isStopping;
+      els.btnFloatingStopRec.textContent = recState.isStopping ? '保存中...' : '■ 停止';
+      els.btnRecordLabel.textContent = recState.isStopping ? '保存中...' : '■ 録画停止';
+      els.btnAutoRec.classList.toggle('is-active', recState.autoRecMode);
+    } else {
+      els.recBadge.classList.remove('recording');
+      els.recBadgeText.textContent = 'STANDBY';
+      els.floatingRecBar.classList.add('hidden');
+      els.btnFloatingStopRec.disabled = false;
+      els.btnFloatingStopRec.textContent = '■ 停止';
+      els.btnRecordLabel.textContent = '● 録画開始';
+      els.btnAutoRec.classList.remove('is-active');
+    }
+  },
+  onComplete: (result) => {
+    if (isMobileDevice || isIOSDevice) {
+      openSaveModal(result);
+    } else {
+      VideoRecorder.triggerDownload(result.blob, result.filename);
+    }
+  },
 });
 
-const bestCodec = VideoRecorder.pickBestMimeType();
-if (bestCodec) {
-  els.codecInfo.textContent =
-    bestCodec.ext === 'mp4'
-      ? '出力: MP4 (H.264+AAC / 1080×1920 60fps) — X直接投稿OK'
-      : `出力: ${bestCodec.ext.toUpperCase()} (1080×1920 60fps / 音声込み)`;
-} else {
-  els.codecInfo.textContent = '※ このブラウザは直接録画に未対応です';
+function updateCodecInfoText() {
+  const bestCodec = VideoRecorder.pickBestMimeType();
+  const resText = sim.liteMode ? '720×1280 30fps 軽量' : '1080×1920 60fps';
+  if (bestCodec) {
+    els.codecInfo.textContent =
+      bestCodec.ext === 'mp4'
+        ? `出力: MP4 (${resText}) — X直接投稿OK`
+        : `出力: ${bestCodec.ext.toUpperCase()} (${resText} / 音声込み)`;
+  } else {
+    els.codecInfo.textContent = '※ このブラウザは直接録画に未対応です';
+  }
 }
 
 // Simulation setup
@@ -193,7 +273,9 @@ const sim = new OverflowSimulation({
 
     if (recorder.isRecording) {
       const recSec = recorder.getElapsedSeconds().toFixed(1);
-      els.recBadgeText.textContent = `${recorder.autoRecMode ? 'AUTO ' : ''}REC ${recSec}s`;
+      const text = `${recorder.autoRecMode ? 'AUTO ' : ''}REC ${recSec}s`;
+      els.recBadgeText.textContent = text;
+      els.floatingRecText.textContent = text;
     }
   },
   onOverflowEnd: () => {
@@ -204,10 +286,86 @@ const sim = new OverflowSimulation({
 });
 
 function unlockAudio() {
-  audio.ensureContext();
+  audio.unlockSync();
 }
-window.addEventListener('pointerdown', unlockAudio);
+window.addEventListener('touchend', unlockAudio, { passive: true });
+window.addEventListener('click', unlockAudio);
 window.addEventListener('keydown', unlockAudio);
+
+// --- Center START / REC-START Overlay Flow ---
+function showStartStandby(mode = 'normal', { seed = null } = {}) {
+  if (recorder.isRecording) recorder.stop();
+  if (editor.active) {
+    editor.setActive(false);
+    els.btnToggleEditMainLabel.textContent = '✏️ この盤面を編集する';
+    els.btnEditModeToggleLabel.textContent = '✏️ 編集モードを ON にする';
+    els.mobilePlayBar.classList.remove('hidden');
+    els.mobileEditBar.classList.add('hidden');
+  }
+
+  closeDrawer();
+  sim.setSuspended(false);
+
+  const compiled = compileDesignToPattern(currentDesign, currentBasePattern);
+  sim.loadPattern(compiled, { seed, overrides: sim.overrides });
+  sim.paused = true;
+  renderer.render(sim); // Paint clean initial frame behind the START button
+
+  pendingStartMode = mode;
+  const isRec = mode === 'record' || mode === 'auto';
+  els.btnCenterStart.classList.toggle('rec-mode', isRec);
+  els.btnCancelPendingRec.classList.toggle('hidden', !isRec);
+
+  if (mode === 'auto') {
+    els.centerStartIcon.textContent = '🎬';
+    els.centerStartTitle.textContent = 'AUTO REC START';
+    els.centerStartSub.textContent = '押すと録画開始→溢れ後に自動保存';
+  } else if (mode === 'record') {
+    els.centerStartIcon.textContent = '●';
+    els.centerStartTitle.textContent = 'REC & START';
+    els.centerStartSub.textContent = '押すと録画と落下を同時スタート';
+  } else {
+    els.centerStartIcon.textContent = '▶';
+    els.centerStartTitle.textContent = 'START';
+    els.centerStartSub.textContent = '押すと落下スタート（サウンドON）';
+  }
+
+  els.startOverlay.classList.remove('hidden');
+  els.btnPauseLabel.textContent = '▶ 再開';
+  els.mBtnPause.textContent = '▶ 再開';
+}
+
+function hideStartStandby() {
+  pendingStartMode = null;
+  els.startOverlay.classList.add('hidden');
+}
+
+function launchFromStandby({ forceNormal = false } = {}) {
+  // Synchronous iOS audio unlock inside button tap!
+  audio.unlockSync();
+  const mode = forceNormal ? 'normal' : (pendingStartMode || 'normal');
+  hideStartStandby();
+
+  sim.setSuspended(false);
+  sim.paused = false;
+  els.btnPauseLabel.textContent = '⏸ 一時停止';
+  els.mBtnPause.textContent = '⏸ 停止';
+
+  if (mode === 'auto' || mode === 'record') {
+    recorder.start({
+      auto: mode === 'auto',
+      label: `overflow_${currentDesign.id || 'custom'}`,
+      liteMode: sim.liteMode,
+    });
+  }
+}
+
+function setLiteMode(enabled) {
+  sim.setLiteMode(enabled);
+  els.btnLiteMode.classList.toggle('is-active', sim.liteMode);
+  els.btnLiteModeLabel.textContent = sim.liteMode ? '⚡ 軽量モード ON' : '⚡ 軽量モード OFF';
+  updateCodecInfoText();
+}
 
 // --- Tabs & Mobile Drawer ---
 function switchTab(tabName) {
@@ -226,10 +384,17 @@ document.querySelectorAll('.tab-btn').forEach((btn) => {
 function openDrawer(tabName = null) {
   if (tabName) switchTab(tabName);
   els.studioPanel.classList.add('drawer-open');
+  // Suspend background physics & canvas rendering while mobile drawer is open -> instant UI speed!
+  if (window.innerWidth <= 900 && !recorder.isRecording) {
+    sim.setSuspended(true);
+  }
 }
 
 function closeDrawer() {
   els.studioPanel.classList.remove('drawer-open');
+  if (els.saveModal.classList.contains('hidden')) {
+    sim.setSuspended(false);
+  }
 }
 
 els.btnCloseDrawer.addEventListener('click', closeDrawer);
@@ -238,6 +403,7 @@ els.btnCloseDrawer.addEventListener('click', closeDrawer);
 function setEditMode(on, { openTab = true } = {}) {
   const enable = !!on;
   if (enable) {
+    hideStartStandby();
     if (recorder.isRecording) recorder.stop();
     sim.paused = true;
     editor.setActive(true);
@@ -310,6 +476,7 @@ function renderPatternButtons() {
       <kbd>${pat.shortcut || idx + 1}</kbd>
     `;
     btn.addEventListener('click', () => {
+      hideStartStandby();
       selectPresetPattern(idx);
       closeDrawer();
     });
@@ -343,6 +510,7 @@ function renderSavedBoards() {
       </div>
     `;
     btn.addEventListener('click', () => {
+      hideStartStandby();
       loadCustomDesign(item.design, item.id);
       closeDrawer();
     });
@@ -439,24 +607,32 @@ function generateAndLoadRandomBoard() {
 // --- Core Actions ---
 function startAutoRecord() {
   unlockAudio();
-  if (editor.active) setEditMode(false);
   if (recorder.isRecording) {
     recorder.stop();
     return;
   }
-  sim.paused = false;
-  els.btnPauseLabel.textContent = '⏸ 一時停止';
-  sim.restart();
-  recorder.start({ auto: true, label: `overflow_${currentDesign.id || 'custom'}` });
+  showStartStandby('auto');
 }
 
 function toggleRecord() {
   unlockAudio();
-  if (editor.active) setEditMode(false);
-  recorder.toggle({ auto: false, label: `overflow_${currentDesign.id || 'custom'}` });
+  if (recorder.isRecording) {
+    recorder.stop();
+    return;
+  }
+  showStartStandby('record');
+}
+
+function triggerRestartStandby(seed = null) {
+  unlockAudio();
+  showStartStandby('normal', { seed });
 }
 
 function togglePause() {
+  if (pendingStartMode) {
+    launchFromStandby();
+    return;
+  }
   if (editor.active) {
     setEditMode(false);
     return;
@@ -508,7 +684,30 @@ function runTraceSilhouette() {
 }
 
 // --- Button & Slider Bindings ---
+els.btnCenterStart.addEventListener('click', () => launchFromStandby());
+els.btnCancelPendingRec.addEventListener('click', () => launchFromStandby({ forceNormal: true }));
+els.btnFloatingStopRec.addEventListener('click', () => recorder.stop());
+
+els.btnCloseSaveModal.addEventListener('click', closeSaveModal);
+els.btnDownloadVideo.addEventListener('click', () => {
+  if (lastRecordedMedia) {
+    VideoRecorder.triggerDownload(lastRecordedMedia.blob, lastRecordedMedia.filename);
+  }
+});
+els.btnShareVideo.addEventListener('click', async () => {
+  if (!lastRecordedMedia) return;
+  try {
+    const file = new File([lastRecordedMedia.blob], lastRecordedMedia.filename, {
+      type: lastRecordedMedia.mimeType || 'video/mp4',
+    });
+    await navigator.share({ files: [file], title: 'OVERFLOW TOY STUDIO' });
+  } catch {
+    // user cancelled share sheet
+  }
+});
+
 els.btnGenerateRandom.addEventListener('click', () => {
+  hideStartStandby();
   generateAndLoadRandomBoard();
   closeDrawer();
 });
@@ -519,14 +718,11 @@ els.btnEditModeToggle.addEventListener('click', () => {
   closeDrawer();
 });
 els.btnRecord.addEventListener('click', toggleRecord);
-els.btnRestart.addEventListener('click', () => {
-  unlockAudio();
-  if (editor.active) setEditMode(false);
-  else sim.restart();
-});
+els.btnRestart.addEventListener('click', () => triggerRestartStandby());
 els.btnPause.addEventListener('click', togglePause);
 els.btnMute.addEventListener('click', toggleMute);
 els.btnHud.addEventListener('click', toggleHud);
+els.btnLiteMode.addEventListener('click', () => setLiteMode(!sim.liteMode));
 els.btnHidePanel.addEventListener('click', togglePanel);
 els.floatingShowPanelBtn.addEventListener('click', togglePanel);
 els.btnResetParams.addEventListener('click', () => {
@@ -538,10 +734,8 @@ els.btnResetParams.addEventListener('click', () => {
   sim.setOverride('catchBonus', currentBasePattern.spawn.catchBonus);
 });
 els.btnReplaySeed.addEventListener('click', () => {
-  unlockAudio();
-  if (editor.active) setEditMode(false);
   const s = Number(els.seedInput.value);
-  if (!Number.isNaN(s)) sim.restart(s);
+  if (!Number.isNaN(s)) triggerRestartStandby(s);
 });
 
 // Physics sliders
@@ -725,13 +919,12 @@ els.slMediaY.addEventListener('input', (e) => {
 document.querySelectorAll('[data-action]').forEach((btn) => {
   btn.addEventListener('click', () => {
     const act = btn.dataset.action;
-    if (act === 'generateRandom') generateAndLoadRandomBoard();
-    else if (act === 'toggleEdit') setEditMode(!editor.active, { openTab: false });
-    else if (act === 'restart') {
-      unlockAudio();
-      if (editor.active) setEditMode(false);
-      else sim.restart();
-    } else if (act === 'pause') togglePause();
+    if (act === 'generateRandom') {
+      hideStartStandby();
+      generateAndLoadRandomBoard();
+    } else if (act === 'toggleEdit') setEditMode(!editor.active, { openTab: false });
+    else if (act === 'restart') triggerRestartStandby();
+    else if (act === 'pause') togglePause();
     else if (act === 'openBgTab') openDrawer('bg');
     else if (act === 'openDrawer') openDrawer(editor.active ? 'edit' : 'play');
     else if (act === 'smoothWalls') editor.smoothWalls();
@@ -768,14 +961,14 @@ window.addEventListener('keydown', (e) => {
   const key = e.key.toLowerCase();
   if (key === 'n') {
     e.preventDefault();
+    hideStartStandby();
     generateAndLoadRandomBoard();
   } else if (key === 'e') {
     e.preventDefault();
     setEditMode(!editor.active);
   } else if (key === 'r') {
     e.preventDefault();
-    if (editor.active) setEditMode(false);
-    else sim.restart();
+    triggerRestartStandby();
   } else if (e.code === 'Space') {
     e.preventDefault();
     togglePause();
@@ -788,6 +981,9 @@ window.addEventListener('keydown', (e) => {
   } else if (key === 'm') {
     e.preventDefault();
     toggleMute();
+  } else if (key === 'l') {
+    e.preventDefault();
+    setLiteMode(!sim.liteMode);
   } else if (key === 'h') {
     e.preventDefault();
     togglePanel();
@@ -798,6 +994,7 @@ window.addEventListener('keydown', (e) => {
     const idx = Number(key) - 1;
     if (idx < PATTERNS.length) {
       e.preventDefault();
+      hideStartStandby();
       selectPresetPattern(idx);
     }
   }
@@ -813,9 +1010,16 @@ window.__overflowStudio = {
   editor,
   selectPresetPattern,
   setEditMode,
+  setLiteMode,
+  showStartStandby,
   PATTERNS,
 };
 
-// Boot!
+// Boot! Enable Lite Mode automatically on mobile/touch devices for smooth performance & recording
+setLiteMode(isMobileDevice);
 selectPresetPattern(0);
 sim.startLoop();
+if (isMobileDevice) {
+  // On mobile/iOS, start in clean START-button standby so the first tap unlocks Web Audio cleanly!
+  showStartStandby('normal');
+}

@@ -18,6 +18,8 @@ export class OverflowSimulation {
     this.seed = 0;
 
     this.paused = false;
+    this.suspended = false;
+    this.liteMode = false;
     this.timeScale = 1.0;
 
     // Return queue stores balls waiting to drop from START hopper
@@ -115,6 +117,7 @@ export class OverflowSimulation {
     };
 
     this.world = new PhysicsWorld(physCfg, this.prng);
+    this.world.liteMode = this.liteMode;
 
     // Build layout from pattern
     const layout = p.buildLayout(this.prng);
@@ -183,11 +186,30 @@ export class OverflowSimulation {
     this.onStateUpdate(this.state);
   }
 
+  setLiteMode(enabled) {
+    this.liteMode = !!enabled;
+    if (this.world) this.world.liteMode = this.liteMode;
+    if (this.renderer?.setLiteMode) this.renderer.setLiteMode(this.liteMode);
+    if (this.audio?.setLiteMode) this.audio.setLiteMode(this.liteMode);
+  }
+
+  setSuspended(flag) {
+    this.suspended = !!flag;
+    if (!this.suspended) {
+      this._lastFrame = performance.now();
+      this._accumulator = 0;
+    }
+  }
+
   startLoop() {
     if (this._rafId) return;
     this._lastFrame = performance.now();
     const tick = (now) => {
       this._rafId = requestAnimationFrame(tick);
+      if (this.suspended) {
+        this._lastFrame = now;
+        return;
+      }
       const rawDt = Math.min((now - this._lastFrame) / 1000, 0.05);
       this._lastFrame = now;
 
@@ -211,11 +233,15 @@ export class OverflowSimulation {
     const scaledDt = rawDt * this.timeScale;
     this._accumulator += scaledDt;
 
+    const maxSteps = this.liteMode ? 2 : 4;
     let guard = 0;
-    while (this._accumulator >= fixedDt && guard < 4) {
+    while (this._accumulator >= fixedDt && guard < maxSteps) {
       this._stepFixed(fixedDt);
       this._accumulator -= fixedDt;
       guard++;
+    }
+    if (guard === maxSteps && this._accumulator > fixedDt * 2) {
+      this._accumulator = 0;
     }
 
     // VFX runs at real frame rate (or subtle slow-mo during overflow finale)

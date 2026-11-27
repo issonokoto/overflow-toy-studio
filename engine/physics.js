@@ -18,6 +18,7 @@ export class PhysicsWorld {
     this.cellSize = 66;
     this.grid = new Map();
     this.time = 0;
+    this.liteMode = false;
 
     // Events emitted per step for VFX/Audio/Rules
     this.events = {
@@ -82,7 +83,9 @@ export class PhysicsWorld {
 
   step(dt) {
     this.clearEvents();
-    const substeps = this.cfg.substeps || 6;
+    const substeps = this.liteMode
+      ? Math.min(4, this.cfg.substeps || 4)
+      : (this.cfg.substeps || 6);
     const subDt = dt / substeps;
 
     for (let s = 0; s < substeps; s++) {
@@ -95,12 +98,13 @@ export class PhysicsWorld {
     }
 
     // Update trails & decay visual flashes once per visual frame
+    const maxTrail = this.liteMode ? 7 : 26;
     for (let i = 0; i < this.balls.length; i++) {
       const b = this.balls[i];
       b.age += dt;
       if (b.flash > 0) b.flash = Math.max(0, b.flash - dt * 3.2);
       b.trail.push({ x: b.x, y: b.y });
-      if (b.trail.length > 26) b.trail.shift();
+      if (b.trail.length > maxTrail) b.trail.splice(0, b.trail.length - maxTrail);
     }
 
     for (let i = 0; i < this.pins.length; i++) {
